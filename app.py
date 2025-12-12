@@ -3,24 +3,19 @@ import pandas as pd
 import numpy as np
 import pickle
 import plotly.express as px
+import seaborn as sns
+from sklearn.ensemble import RandomForestClassifier
 
 # ------------------------------
 # Folder Path
 # ------------------------------
-folder_path = r"E:\100 Projects\1\titanic-streamlit\\"
+folder_path = r"E:\100 Projects\1\titanic-streamlit\\"  # Update if needed
 
 # ------------------------------
-# Load Models
+# Load Model & Scaler
 # ------------------------------
 rf = pickle.load(open(folder_path + "rf_model.pkl", "rb"))
-xgb = pickle.load(open(folder_path + "xgb_model.pkl", "rb"))
-lgbm = pickle.load(open(folder_path + "lgbm_model.pkl", "rb"))
-
-models_dict = {
-    "Random Forest": rf,
-    "XGBoost": xgb,
-    "LightGBM": lgbm
-}
+scaler = pickle.load(open(folder_path + "scaler.pkl", "rb"))
 
 # ------------------------------
 # Streamlit Config
@@ -30,12 +25,16 @@ st.title("🚢 Titanic Survival Prediction App")
 st.write("Predict survival probability based on passenger details")
 
 # ------------------------------
+# Load Dataset
+# ------------------------------
+df = pd.read_csv(folder_path + "titanic_full.csv")
+st.subheader("Dataset Sample")
+st.dataframe(df.head())
+
+# ------------------------------
 # Sidebar Inputs
 # ------------------------------
-st.sidebar.header("Passenger Details & Model Selection")
-
-# Dropdown to select model
-model_choice = st.sidebar.selectbox("Choose Model", list(models_dict.keys()))
+st.sidebar.header("Passenger Details")
 
 pclass = st.sidebar.selectbox("Passenger Class", [1,2,3])
 sex = st.sidebar.selectbox("Sex", ["male", "female"])
@@ -78,25 +77,18 @@ input_data = pd.DataFrame({
     'embarked_S':[embarked_S]
 })
 
-# ------------------------------
-# Scale numeric columns for RF, XGB, LGBM
-# ------------------------------
+# Scale numeric features
 num_cols = ['age','sibsp','parch','fare','family_size','fare_per_person']
-scaler = pickle.load(open(folder_path + "scaler.pkl", "rb"))
 input_data[num_cols] = scaler.transform(input_data[num_cols])
-
-# ------------------------------
-# Select model for prediction & feature importance
-# ------------------------------
-model = models_dict[model_choice]
 
 # ------------------------------
 # Prediction
 # ------------------------------
-st.header(f"🔮 Prediction using {model_choice}")
+st.header("🔮 Prediction")
+
 if st.button("Predict"):
-    pred = model.predict(input_data)[0]
-    prob = model.predict_proba(input_data)[0][1]
+    pred = rf.predict(input_data)[0]
+    prob = rf.predict_proba(input_data)[0][1]
 
     if pred == 1:
         st.success(f"🟢 Survived! Probability: {prob*100:.2f}%")
@@ -104,12 +96,16 @@ if st.button("Predict"):
         st.error(f"🔴 Did NOT Survive. Probability: {prob*100:.2f}%")
 
 # ------------------------------
-# Feature Importance
+# Visualizations
 # ------------------------------
-st.header(f"📊 Feature Importance ({model_choice})")
-importances = model.feature_importances_
+st.header("📊 Feature Correlation")
+numeric_cols = df.select_dtypes(include=np.number).columns
+fig_corr = sns.heatmap(df[numeric_cols].corr(), annot=True, cmap='coolwarm')
+st.pyplot(fig_corr.figure)
 
-feat_names = input_data.columns
-feat_imp = pd.DataFrame({'Feature': feat_names, 'Importance': importances}).sort_values(by='Importance', ascending=False)
-fig = px.bar(feat_imp, x='Feature', y='Importance', color='Importance', color_continuous_scale='Viridis')
-st.plotly_chart(fig, use_container_width=True)
+if "is_rich" in df.columns:
+    st.header("💰 Survival by Wealth")
+    fig_rich = px.histogram(df, x='is_rich', color='survived',
+                            barmode='group',
+                            labels={'is_rich':'Rich (1=Yes,0=No)', 'survived':'Survival'})
+    st.plotly_chart(fig_rich, use_container_width=True)
