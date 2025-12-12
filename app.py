@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
-from catboost import CatBoostClassifier
 import plotly.express as px
 
 # ------------------------------
@@ -17,14 +16,10 @@ rf = pickle.load(open(folder_path + "rf_model.pkl", "rb"))
 xgb = pickle.load(open(folder_path + "xgb_model.pkl", "rb"))
 lgbm = pickle.load(open(folder_path + "lgbm_model.pkl", "rb"))
 
-cat = CatBoostClassifier()
-cat.load_model(folder_path + "cat_model.cbm")
-
 models_dict = {
     "Random Forest": rf,
     "XGBoost": xgb,
-    "LightGBM": lgbm,
-    "CatBoost": cat
+    "LightGBM": lgbm
 }
 
 # ------------------------------
@@ -88,11 +83,10 @@ input_data = pd.DataFrame({
 # ------------------------------
 num_cols = ['age','sibsp','parch','fare','family_size','fare_per_person']
 scaler = pickle.load(open(folder_path + "scaler.pkl", "rb"))
-if model_choice in ["Random Forest","XGBoost","LightGBM"]:
-    input_data[num_cols] = scaler.transform(input_data[num_cols])
+input_data[num_cols] = scaler.transform(input_data[num_cols])
 
 # ------------------------------
-# Ensure model variable is defined for prediction & feature importance
+# Select model for prediction & feature importance
 # ------------------------------
 model = models_dict[model_choice]
 
@@ -101,14 +95,8 @@ model = models_dict[model_choice]
 # ------------------------------
 st.header(f"🔮 Prediction using {model_choice}")
 if st.button("Predict"):
-    if model_choice == "CatBoost":
-        pred = model.predict(input_data)
-        prob = model.predict_proba(input_data)[:,1]
-        pred = int(pred[0])
-        prob = float(prob[0])
-    else:
-        pred = model.predict(input_data)[0]
-        prob = model.predict_proba(input_data)[0][1]
+    pred = model.predict(input_data)[0]
+    prob = model.predict_proba(input_data)[0][1]
 
     if pred == 1:
         st.success(f"🟢 Survived! Probability: {prob*100:.2f}%")
@@ -119,11 +107,7 @@ if st.button("Predict"):
 # Feature Importance
 # ------------------------------
 st.header(f"📊 Feature Importance ({model_choice})")
-
-if model_choice == "CatBoost":
-    importances = model.get_feature_importance()
-else:
-    importances = model.feature_importances_
+importances = model.feature_importances_
 
 feat_names = input_data.columns
 feat_imp = pd.DataFrame({'Feature': feat_names, 'Importance': importances}).sort_values(by='Importance', ascending=False)
