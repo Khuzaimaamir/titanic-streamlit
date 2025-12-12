@@ -2,15 +2,34 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
+from catboost import CatBoostClassifier
 import plotly.express as px
-import plotly.graph_objects as go
 
 # ------------------------------
-# Load Model and Scaler
+# Folder Path
 # ------------------------------
-model = pickle.load(open("model.pkl", "rb"))
-scaler = pickle.load(open("scaler.pkl", "rb"))
+folder_path = r"E:\100 Projects\1\titanic-streamlit\\"
 
+# ------------------------------
+# Load Models
+# ------------------------------
+rf = pickle.load(open(folder_path + "rf_model.pkl", "rb"))
+xgb = pickle.load(open(folder_path + "xgb_model.pkl", "rb"))
+lgbm = pickle.load(open(folder_path + "lgbm_model.pkl", "rb"))
+
+cat = CatBoostClassifier()
+cat.load_model(folder_path + "cat_model.cbm")
+
+models_dict = {
+    "Random Forest": rf,
+    "XGBoost": xgb,
+    "LightGBM": lgbm,
+    "CatBoost": cat
+}
+
+# ------------------------------
+# Streamlit Config
+# ------------------------------
 st.set_page_config(page_title="🚢 Titanic Survival Predictor", layout="wide")
 st.title("🚢 Titanic Survival Prediction App")
 st.write("Predict survival probability based on passenger details")
@@ -18,7 +37,10 @@ st.write("Predict survival probability based on passenger details")
 # ------------------------------
 # Sidebar Inputs
 # ------------------------------
-st.sidebar.header("Passenger Details")
+st.sidebar.header("Passenger Details & Model Selection")
+
+# Dropdown to select model
+model_choice = st.sidebar.selectbox("Choose Model", list(models_dict.keys()))
 
 pclass = st.sidebar.selectbox("Passenger Class", [1,2,3])
 sex = st.sidebar.selectbox("Sex", ["male", "female"])
@@ -61,61 +83,49 @@ input_data = pd.DataFrame({
     'embarked_S':[embarked_S]
 })
 
-# Ensure numeric columns match model
+# ------------------------------
+# Scale numeric columns for RF, XGB, LGBM
+# ------------------------------
 num_cols = ['age','sibsp','parch','fare','family_size','fare_per_person']
-input_data[num_cols] = scaler.transform(input_data[num_cols])
+scaler = pickle.load(open(folder_path + "scaler.pkl", "rb"))
+if model_choice in ["Random Forest","XGBoost","LightGBM"]:
+    input_data[num_cols] = scaler.transform(input_data[num_cols])
+
+# ------------------------------
+# Ensure model variable is defined for prediction & feature importance
+# ------------------------------
+model = models_dict[model_choice]
 
 # ------------------------------
 # Prediction
 # ------------------------------
-st.header("🔮 Survival Prediction")
+st.header(f"🔮 Prediction using {model_choice}")
 if st.button("Predict"):
-    pred = model.predict(input_data)[0]
-    prob = model.predict_proba(input_data)[0][1]
+    if model_choice == "CatBoost":
+        pred = model.predict(input_data)
+        prob = model.predict_proba(input_data)[:,1]
+        pred = int(pred[0])
+        prob = float(prob[0])
+    else:
+        pred = model.predict(input_data)[0]
+        prob = model.predict_proba(input_data)[0][1]
+
     if pred == 1:
         st.success(f"🟢 Survived! Probability: {prob*100:.2f}%")
     else:
         st.error(f"🔴 Did NOT Survive. Probability: {prob*100:.2f}%")
 
 # ------------------------------
-# EDA / Interactive Plots
+# Feature Importance
 # ------------------------------
-st.header("📊 Titanic Dataset EDA")
+st.header(f"📊 Feature Importance ({model_choice})")
 
-# Load Titanic dataset (original Kaggle columns)
-df = pd.read_csv("titanic.csv")  # Ensure titanic.csv is in same folder
-
-tab1, tab2, tab3 = st.tabs(["Survival Analysis", "Feature Importance", "Correlation"])
-
-with tab1:
-    st.subheader("Survival by Sex")
-    fig = px.histogram(df, x='Sex', color='Survived', barmode='group', 
-                       labels={'Sex':'Gender','Survived':'Survival'})
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.subheader("Survival by Class")
-    fig = px.histogram(df, x='Pclass', color='Survived', barmode='group')
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.subheader("Survival by Age Group")
-    df['AgeGroup'] = pd.cut(df['Age'], bins=[0,12,20,40,60,80], labels=["0-12","13-20","21-40","41-60","61-80"])
-    fig = px.histogram(df, x='AgeGroup', color='Survived', barmode='group')
-    st.plotly_chart(fig, use_container_width=True)
-
-with tab2:
-    st.subheader("Random Forest Feature Importance")
+if model_choice == "CatBoost":
+    importances = model.get_feature_importance()
+else:
     importances = model.feature_importances_
-    feat_names = input_data.columns
-    feat_imp = pd.DataFrame({'Feature': feat_names, 'Importance': importances}).sort_values(by='Importance', ascending=False)
-    fig = px.bar(feat_imp, x='Feature', y='Importance', color='Importance', color_continuous_scale='Viridis')
-    st.plotly_chart(fig, use_container_width=True)
 
-with tab3:
-    st.subheader("Correlation Heatmap")
-    numeric_df = df.select_dtypes(include=np.number)  # Only numeric columns
-    corr = numeric_df.corr()
-    fig = go.Figure(data=go.Heatmap(
-        z=corr.values, x=corr.columns, y=corr.columns,
-        colorscale='RdBu', zmin=-1, zmax=1
-    ))
-    st.plotly_chart(fig, use_container_width=True)
+feat_names = input_data.columns
+feat_imp = pd.DataFrame({'Feature': feat_names, 'Importance': importances}).sort_values(by='Importance', ascending=False)
+fig = px.bar(feat_imp, x='Feature', y='Importance', color='Importance', color_continuous_scale='Viridis')
+st.plotly_chart(fig, use_container_width=True)
