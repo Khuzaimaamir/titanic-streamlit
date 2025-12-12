@@ -61,9 +61,6 @@ input_data[num_cols] = scaler.transform(input_data[num_cols])
 # ------------------------------
 st.header("🔮 Survival Prediction")
 
-st.subheader("Input Summary")
-st.dataframe(input_data)
-
 if st.button("Predict"):
     pred = model.predict(input_data)[0]
     prob = model.predict_proba(input_data)[0][1]
